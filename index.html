@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>Dual Timers</title>
+  <style>
+    html,body{
+      margin:0;
+      padding:0;
+      height:100%;
+      background:#fff;
+      color:#00f; /* blue text */
+      -webkit-touch-callout:none;
+      -webkit-user-select:none;
+      user-select:none;
+    }
+
+    /* Text outline */
+    .outline{
+      text-shadow:-2px -2px 0 #000, 2px -2px 0 #000,
+                 -2px 2px 0 #000, 2px 2px 0 #000;
+    }
+
+    #topTimer, #bottomTimer{
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      width:100%;
+      font-weight:bold;
+      font-family:system-ui, sans-serif;
+      cursor:pointer; /* indicate tappable */
+    }
+
+    /* Top section – 75% of viewport height */
+    #topTimer{
+      height:75vh;
+      border-bottom:4px solid #000; /* black dividing line */
+      font-size:20vh;               /* scales with screen */
+    }
+
+    /* Bottom section – 25% of viewport height */
+    #bottomTimer{
+      height:25vh;
+      font-size:10vh;
+    }
+
+    /* Flashing animation for bottom timer at 0 */
+    @keyframes flashBG{
+      0%{background:#fff;}
+      100%{background:#0f0;}
+    }
+    .flash{
+      animation:flashBG 0.5s alternate infinite;
+    }
+  </style>
+</head>
+<body>
+  <div id="topTimer" class="outline">30</div>
+  <div id="bottomTimer" class="outline">3:00</div>
+
+<script>
+/****************  KEEP SCREEN AWAKE  ****************/
+// Some mobile browsers require a user gesture before allowing
+// the Screen Wake Lock API. We therefore request (or re‑request)
+// the lock only AFTER the user starts a timer.
+let wakeLock = null;
+async function ensureWakeLock(){
+  if(!('wakeLock' in navigator)) return; // API unsupported – graceful fallback
+  try{
+    // Request only if we don't already hold it
+    if(!wakeLock){
+      wakeLock = await navigator.wakeLock.request('screen');
+      wakeLock.addEventListener('release', ()=>{
+        wakeLock = null; // allow a future re‑request
+      });
+    }
+  }catch(err){
+    // Silently fail (e.g. browser denied or page not visible)
+  }
+}
+// Re‑acquire when tab becomes visible again (if a timer is running)
+let timersRunning = false; // updated below
+window.addEventListener('visibilitychange', ()=>{
+  if(document.visibilityState === 'visible' && timersRunning){
+    ensureWakeLock();
+  }
+});
+/****************************************************/
+
+(function(){
+  /* ========= Top Timer (30‑second) ========= */
+  const topDiv = document.getElementById('topTimer');
+  let topRemaining = 30;   // seconds
+  let topInterval = null;
+
+  function updateTop(){
+    topDiv.textContent = topRemaining;
+  }
+
+  function startTop(){
+    if(topInterval) return; // already running
+    ensureWakeLock();
+    timersRunning = true;
+    topInterval = setInterval(()=>{
+      topRemaining--;
+      if(topRemaining <= 0){
+        clearInterval(topInterval);
+        topInterval = null;
+        timersRunning = bottomInterval !== null; // still running? determine again
+        topRemaining = 30;   // auto‑reset (stops)
+      }
+      updateTop();
+    }, 1000);
+  }
+
+  function resetTop(){
+    clearInterval(topInterval);
+    topInterval = null;
+    topRemaining = 30;
+    timersRunning = bottomInterval !== null;
+    updateTop();
+  }
+
+  topDiv.addEventListener('click', ()=>{
+    if(topInterval){ // running → reset & stop
+      resetTop();
+    }else{           // ready → start
+      startTop();
+    }
+  });
+
+  /* ========= Bottom Timer (3‑minute) ========= */
+  const bottomDiv = document.getElementById('bottomTimer');
+  let bottomRemaining = 180; // seconds
+  let bottomInterval = null;
+  let flashing = false;
+
+  function fmtBottom(s){
+    const m = Math.floor(s/60);
+    const sec = (s%60).toString().padStart(2,'0');
+    return `${m}:${sec}`;
+  }
+  function updateBottom(){
+    bottomDiv.textContent = fmtBottom(bottomRemaining);
+  }
+
+  function startBottom(){
+    if(bottomInterval) return; // already running
+    ensureWakeLock();
+    timersRunning = true;
+    bottomInterval = setInterval(()=>{
+      bottomRemaining--;
+      if(bottomRemaining <= 0){
+        clearInterval(bottomInterval);
+        bottomInterval = null;
+        timersRunning = topInterval !== null;
+        bottomRemaining = 0;
+        updateBottom();
+        bottomDiv.classList.add('flash');
+        flashing = true;
+        return;
+      }
+      updateBottom();
+    }, 1000);
+  }
+
+  function resetBottom(){
+    clearInterval(bottomInterval);
+    bottomInterval = null;
+    bottomRemaining = 180;
+    bottomDiv.classList.remove('flash');
+    flashing = false;
+    timersRunning = topInterval !== null;
+    updateBottom();
+  }
+
+  bottomDiv.addEventListener('click', ()=>{
+    if(flashing){             // flashing state → reset & stop
+      resetBottom();
+      return;
+    }
+    if(bottomInterval){       // running → reset & stop
+      resetBottom();
+    }else{                    // ready → start
+      startBottom();
+    }
+  });
+
+  /* Initial render */
+  updateTop();
+  updateBottom();
+})();
+</script>
+</body>
+</html>
